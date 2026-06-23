@@ -408,7 +408,7 @@ def test_launch_workspace_confirmation_skipped_with_yolo_flag():
 
 
 def test_launch_workspace_confirmation_for_default_provider():
-    """Test that default provider (kiro_cli) also triggers workspace confirmation."""
+    """Test that default provider (claude_code) also triggers workspace confirmation."""
     runner = CliRunner()
 
     with (
@@ -421,11 +421,11 @@ def test_launch_workspace_confirmation_for_default_provider():
         }
         mock_post.return_value.raise_for_status.return_value = None
 
-        # Default provider is kiro_cli, which requires workspace confirmation
+        # Default provider is claude_code, which requires workspace confirmation
         result = runner.invoke(launch, ["--agents", "test-agent", "--headless"], input="y\n")
 
         assert result.exit_code == 0
-        assert "launching on kiro_cli" in result.output
+        assert "launching on claude_code" in result.output
         assert "Proceed?" in result.output
 
 
@@ -694,7 +694,7 @@ def test_launch_yolo_still_resolves_profile_provider():
 
         assert result.exit_code == 0
         # Provider resolution must run even on the --yolo branch.
-        mock_resolve.assert_called_once_with("codex_panelist", "kiro_cli")
+        mock_resolve.assert_called_once_with("codex_panelist", "claude_code")
         # The kiro_cli-specific yolo warning text must NOT appear, because
         # the profile's provider ("claude_code") was honoured.
         assert "kiro_cli will launch in --legacy-ui mode" not in result.output
@@ -731,7 +731,7 @@ def test_launch_allowed_tools_still_resolves_profile_provider():
         )
 
         assert result.exit_code == 0
-        mock_resolve.assert_called_once_with("gemini_panelist", "kiro_cli")
+        mock_resolve.assert_called_once_with("gemini_panelist", "claude_code")
         # Local prompts must reflect the resolved provider, not the default.
         assert "launching on gemini_cli" in result.output
 

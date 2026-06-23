@@ -224,7 +224,7 @@ async def install_profile(
 
     Args:
         source: Agent name or https:// URL from an allow-listed host
-        provider: Target provider (default: kiro_cli)
+        provider: Target provider (default: claude_code)
         env_vars: Optional env vars written to the managed .env before install
 
     Returns:
@@ -275,7 +275,7 @@ async def launch_session(
 
     Args:
         agent_profile: Agent profile for the new session
-        provider: CLI provider (default: profile provider or kiro_cli)
+        provider: CLI provider (default: profile provider or claude_code)
         session_name: Optional custom session name (auto-generated if omitted)
         working_directory: Optional working directory for the session
         allowed_tools: Optional list of tool restrictions

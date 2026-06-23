@@ -47,9 +47,9 @@
                                    ┌─────▼──────┐
                                    │ CLI Tools  │
                                    │• Kiro CLI  │
-                                   │  (default) │
                                    │• Claude    │
                                    │  Code      │
+                                   │  (default) │
                                    │• Codex CLI │
                                    └────────────┘
 ```
@@ -83,9 +83,9 @@ src/cli_agent_orchestrator/
 ├── providers/             # Provider Layer: CLI tool integration
 │   ├── base.py            # Abstract provider interface (mark_input_received hook)
 │   ├── manager.py         # Maps terminal_id → provider
-│   ├── kiro_cli.py        # Kiro CLI provider (kiro_cli) - default
+│   ├── kiro_cli.py        # Kiro CLI provider (kiro_cli)
 │   ├── q_cli.py           # Amazon Q CLI provider (q_cli)
-│   ├── claude_code.py     # Claude Code provider (claude_code, ❯ prompt, trust prompt handling)
+│   ├── claude_code.py     # Claude Code provider (claude_code, ❯ prompt, trust prompt handling) - default
 │   └── codex.py           # Codex/ChatGPT CLI provider (codex, developer_instructions, › prompt + • bullet detection, trust prompt handling)
 ├── models/                # Data models
 │   ├── terminal.py        # Terminal, TerminalStatus
