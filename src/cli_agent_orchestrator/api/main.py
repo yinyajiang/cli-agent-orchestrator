@@ -511,7 +511,14 @@ async def health_check():
     return {
         "status": "ok",
         "service": "cli-agent-orchestrator",
+        "version": SERVER_VERSION,
         "terminal_backend": backend_name,
+        "capabilities": {
+            "configurable_cao_home": True,
+            "terminal_ws": True,
+            "events_sse": True,
+            "workspace_scoped_server": True,
+        },
         "components": {
             "cao": "ok",
             "herdr": _probe("herdr"),

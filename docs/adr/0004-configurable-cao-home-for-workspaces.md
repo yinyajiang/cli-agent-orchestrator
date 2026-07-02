@@ -1,0 +1,3 @@
+# Configurable CAO home for workspaces
+
+`cao-server` supports an environment override for its home directory so the desktop app can launch one isolated server per Workspace. The default remains the existing user-level CAO home for CLI and bundled Web UI usage, while desktop-launched servers receive a Workspace-specific home under the app data directory to keep databases, logs, FIFOs, and memory isolated without writing runtime state into the project directory. The health endpoint exposes capability flags, plus a version for diagnostics, so the desktop app can reject incompatible host-installed servers without relying only on semantic version comparisons.

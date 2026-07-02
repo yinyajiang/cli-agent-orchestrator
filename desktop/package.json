@@ -1,0 +1,54 @@
+{
+  "name": "cao-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Electron desktop shell for CLI Agent Orchestrator",
+  "author": "AWS Labs",
+  "type": "module",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "npm run compile:electron && concurrently -k \"vite\" \"wait-on http://localhost:1420 && npm run electron:dev\"",
+    "electron:dev": "VITE_DEV_SERVER_URL=http://localhost:1420 electron .",
+    "compile:electron": "tsc -p tsconfig.node.json",
+    "build": "npm run typecheck && vite build && npm run compile:electron && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
+    "vite": "vite",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "lucide-react": "0.561.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.2",
+    "@types/node": "26.1.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "concurrently": "10.0.3",
+    "electron": "43.0.0",
+    "electron-builder": "26.15.3",
+    "tailwindcss": "4.3.2",
+    "typescript": "6.0.3",
+    "vite": "8.1.3",
+    "wait-on": "9.0.10"
+  },
+  "build": {
+    "appId": "dev.cao.desktop",
+    "productName": "CAO Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.developer-tools"
+    }
+  }
+}
