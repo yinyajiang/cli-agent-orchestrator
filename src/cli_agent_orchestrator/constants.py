@@ -13,6 +13,15 @@ from pathlib import Path
 
 from cli_agent_orchestrator.models.provider import ProviderType
 
+
+def _env_int(name: str, default: int) -> int:
+    """Read an integer env var, falling back when the value is invalid."""
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
 # =============================================================================
 # Session Configuration
 # =============================================================================
@@ -64,8 +73,10 @@ FIFO_DIR.mkdir(parents=True, exist_ok=True)
 # Keeps trailing 8KB of terminal output for pattern matching
 STATE_BUFFER_MAX = 8192
 
-# Max events buffered per subscriber queue before dropping
-EVENT_BUS_MAX_QUEUE_SIZE = 1024
+# Max events buffered per subscriber queue before dropping. Claude's TUI startup
+# can emit thousands of small chunks in a short burst, so keep this comfortably
+# above the old 1024 default while still bounded.
+EVENT_BUS_MAX_QUEUE_SIZE = _env_int("CAO_EVENT_BUS_MAX_QUEUE_SIZE", 16384)
 
 # pyte-rendered status detection. When enabled, the StatusMonitor feeds each
 # terminal's output through a pyte terminal emulator and runs detection against
@@ -150,14 +161,7 @@ LOCAL_AGENT_STORE_DIR = CAO_HOME_DIR / "agent-store"
 # Local skill store for installed CAO skills
 SKILLS_DIR = CAO_HOME_DIR / "skills"
 
-# Per-terminal workspace directories for providers that read context files
-# from the current working directory (currently: Gemini CLI's GEMINI.md).
-# Each terminal gets its own subdirectory so parallel sessions cannot clobber
-# each other's system prompt.
-GEMINI_WORKSPACES_DIR = CAO_HOME_DIR / "gemini-workspaces"
-
 # Provider-specific agent directories
-Q_AGENTS_DIR = Path.home() / ".aws" / "amazonq" / "cli-agents"  # Q CLI agents
 KIRO_AGENTS_DIR = Path(os.environ.get("CAO_AGENTS_DIR", str(Path.home() / ".kiro" / "agents")))
 COPILOT_AGENTS_DIR = Path.home() / ".copilot" / "agents"  # Copilot custom agents
 OPENCODE_CONFIG_DIR = Path.home() / ".aws" / "opencode"  # OpenCode CAO-managed config root
@@ -368,3 +372,45 @@ WORKFLOW_NAME_RE = r"^[A-Za-z0-9_-]{1,64}$"
 # run_agent_step server-side: the engine (N5) in-process, the handoff MCP client
 # over this single HTTP route (replacing its former six granular round-trips).
 TERMINALS_RUN_STEP_ROUTE = "/terminals/run-step"
+
+# Default directory scanned for workflow spec YAML files when no --dir is given
+# (Bolt 2, N2). Spec files on disk are the single source of truth; the
+# ``workflow_index`` SQLite table is a derived, droppable projection (B2-BR-2).
+WORKFLOW_SPEC_DIR = CAO_HOME_DIR / "workflows"
+
+# Soft cap on the in-memory structured-return store (Bolt 2, N4, ADR-4 / Q1=A).
+# On ``put`` the oldest entry is evicted first when ``len > cap`` — a best-effort,
+# non-blocking eviction that NEVER raises (the store is transient and process-local;
+# the N6 run journal supersedes it). Last-write-wins on the same (run_id, step_id).
+WORKFLOW_OUTPUT_STORE_MAX_ENTRIES = 10000
+
+# Run-engine retry policy (Bolt 3, N5, FR-5.3 / B3-BR-3/B3-BR-4). A step's
+# run-failure loop (run_agent_step raising StepExecutionError) retries the SAME
+# prompt up to ``WORKFLOW_DEFAULT_STEP_RETRIES`` extra times when the step omits
+# ``retries`` (attempts range 1..N+1). The per-step ``retries`` grammar field, if
+# present, must satisfy ``0 <= retries <= WORKFLOW_MAX_RETRIES`` (the upper bound
+# pins the B3-PERF-4 worst-case ceiling). ``retries: 0`` means exactly one attempt.
+WORKFLOW_DEFAULT_STEP_RETRIES = 3
+WORKFLOW_MAX_RETRIES = 10
+
+# Per-step completion timeout the engine passes to ``run_agent_step`` (matches the
+# substrate's existing 600.0 default; named here so the engine references a constant
+# rather than a magic number, project Mandated rule).
+WORKFLOW_STEP_TIMEOUT = 600.0
+
+# Client-side HTTP timeout (seconds) for the BLOCKING ``POST /workflows/runs`` call
+# (workflow_run MCP tool + ``cao workflow run`` CLI). Unlike the quick cancel/status
+# reads, this request awaits ``start_run`` INLINE — the server holds the connection
+# open for the WHOLE run (Q1=A, §8), so a flat ``MCP_REQUEST_TIMEOUT`` (=30s) would
+# raise ``requests.Timeout`` and report a still-running run as a failure.
+#
+# The strict worst case is ``WORKFLOW_STEP_TIMEOUT * WORKFLOW_MAX_STEPS`` (600s * 100
+# = 60000s ~= 16.7h) plus per-step ready-wait/reprompt headroom — an impractically
+# long socket timeout that would also mask a genuinely hung server for hours. We pick
+# a defensible ceiling instead: a generous-but-realistic multi-step run (each step a
+# full ``WORKFLOW_STEP_TIMEOUT`` plus the substrate's ~120s ready-wait, across a dozen
+# steps) plus the same +180s headroom ``handoff`` uses for its single blocking step
+# (mcp_server/server.py ``client_timeout = timeout + 180.0``). This is clearly NOT the
+# flat 30s and covers any plausible multi-step, multi-minute workflow; an operator
+# running near the 100-step ceiling can raise it via the env override if needed.
+WORKFLOW_RUN_REQUEST_TIMEOUT = (WORKFLOW_STEP_TIMEOUT + 120.0) * 12 + 180.0  # = 8820.0s (~2.45h)

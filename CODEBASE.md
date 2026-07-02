@@ -35,10 +35,10 @@
            ├─────────┤               ├──────────┤
            │ • tmux  │               │ • kiro   │
            │ • db    │               │   _cli   │
-           └────┬────┘               │ • q_cli  │
-                │                    │ • claude │
-         ┌──────┴──────┐             │   _code  │
-         │             │             │ • codex  │
+           └────┬────┘               │ • claude │
+                │                    │   _code  │
+         ┌──────┴──────┐             │ • codex  │
+         │             │             │          │
     ┌────▼────┐  ┌─────▼─────┐      │          │
     │  Tmux   │  │  SQLite   │      │          │
     │ Sessions│  │  Database │      │          │
@@ -84,9 +84,14 @@ src/cli_agent_orchestrator/
 │   ├── base.py            # Abstract provider interface (mark_input_received hook)
 │   ├── manager.py         # Maps terminal_id → provider
 │   ├── kiro_cli.py        # Kiro CLI provider (kiro_cli)
-│   ├── q_cli.py           # Amazon Q CLI provider (q_cli)
 │   ├── claude_code.py     # Claude Code provider (claude_code, ❯ prompt, trust prompt handling) - default
-│   └── codex.py           # Codex/ChatGPT CLI provider (codex, developer_instructions, › prompt + • bullet detection, trust prompt handling)
+│   ├── codex.py           # Codex/ChatGPT CLI provider (codex, developer_instructions, › prompt + • bullet detection, trust prompt handling)
+│   ├── kimi_cli.py        # Kimi CLI provider (kimi_cli)
+│   ├── copilot_cli.py     # GitHub Copilot CLI provider (copilot_cli)
+│   ├── opencode_cli.py    # OpenCode CLI provider (opencode_cli)
+│   ├── hermes.py          # Hermes provider (hermes)
+│   ├── cursor_cli.py      # Cursor CLI provider (cursor_cli)
+│   └── antigravity_cli.py # Antigravity CLI provider (antigravity_cli)
 ├── models/                # Data models
 │   ├── terminal.py        # Terminal, TerminalStatus
 │   ├── session.py         # Session model

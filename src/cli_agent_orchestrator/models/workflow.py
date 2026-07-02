@@ -26,7 +26,6 @@ Bolt 3) when sequencing reaches a reserved construct. Bolt 1 never raises it.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -37,11 +36,29 @@ from pydantic import BaseModel, Field, model_validator
 
 from cli_agent_orchestrator.constants import (
     WORKFLOW_MAX_INPUTS,
+    WORKFLOW_MAX_RETRIES,
     WORKFLOW_MAX_SPEC_BYTES,
     WORKFLOW_MAX_STEPS,
     WORKFLOW_NAME_RE,
     WORKFLOW_OUTPUT_SCHEMA_MAX_DEPTH,
     WORKFLOW_SHIPPED_UNITS,
+)
+
+# Re-exported from the light runtime module so existing
+# ``from ...models.workflow import StepState / WorkflowIndexRow / ...`` call
+# sites are unaffected. The DTOs themselves live in ``workflow_runtime`` (which
+# imports no jsonschema/yaml) so the MCP server can consume ``ReturnAck`` without
+# pulling this grammar module's heavy deps onto the HTTP seam.
+from cli_agent_orchestrator.models.workflow_runtime import (  # noqa: F401
+    ReturnAck,
+    RunState,
+    RunStatus,
+    StepOutputRecord,
+    StepResult,
+    StepState,
+    StepStatus,
+    WorkflowIndexRow,
+    WorkflowRunResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,25 +105,6 @@ def is_reserved(construct: str) -> bool:
 # ---------------------------------------------------------------------------
 # Enums / reserved vocabulary (defined here; animated by N5+)
 # ---------------------------------------------------------------------------
-class StepState(str, Enum):
-    """Per-step run state. Defined in Bolt 1; instantiated by the engine (N5)."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
-    COMPLETED_UNVALIDATED = "completed_unvalidated"
-
-
-class RunState(str, Enum):
-    """Whole-run state. Defined in Bolt 1; instantiated by the engine (N5)."""
-
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
 class LoopGuard(str, Enum):
     """Loop guardrail vocabulary (FR-8.2). Validated structurally now (BR-4),
     enforced at run time by N8."""
@@ -163,6 +161,12 @@ class WorkflowStep(BaseModel):
     on_no_progress: Optional[str] = None
     # Per-step failure policy (FR-5.3). Semantics are N5's.
     on_failure: Optional[Literal["halt", "continue"]] = None
+    # Per-step run-failure retry budget (FR-5.3, B3-BR-3). Separate from
+    # ``on_failure``: ``retries`` = how many EXTRA attempts on a run-failure
+    # (None -> engine default of WORKFLOW_DEFAULT_STEP_RETRIES); ``on_failure`` =
+    # what to do once attempts are exhausted. ``retries: 0`` => exactly one
+    # attempt, no retry. Validated in ``validate_grammar`` (0..WORKFLOW_MAX_RETRIES).
+    retries: Optional[int] = None
 
     def is_loop(self) -> bool:
         """True if this step declares ANY loop field (so BR-4 applies)."""
@@ -232,6 +236,23 @@ class WorkflowSpec(BaseModel):
                 schema_error = _check_output_schema(step.output_schema)
                 if schema_error is not None:
                     errors.append(f"step '{step.id}': {schema_error}")
+
+        # 4b. Per-step retry budget (B3-BR-3): if present, must be an integer in
+        # [0, WORKFLOW_MAX_RETRIES]. Omitted -> engine default (regression-safe:
+        # a spec without ``retries`` parses exactly as before). ``bool`` is a
+        # subclass of ``int`` so reject it explicitly (``retries: true`` is not 1).
+        for step in self.steps:
+            if step.retries is not None:
+                if isinstance(step.retries, bool) or not isinstance(step.retries, int):
+                    errors.append(
+                        f"step '{step.id}': retries must be an integer "
+                        f"(0..{WORKFLOW_MAX_RETRIES})"
+                    )
+                elif not (0 <= step.retries <= WORKFLOW_MAX_RETRIES):
+                    errors.append(
+                        f"step '{step.id}': retries {step.retries} out of range "
+                        f"(0..{WORKFLOW_MAX_RETRIES})"
+                    )
 
         # 5. Loop guardrail completeness — structural floor (BR-4/FR-8.2).
         for step in self.steps:
@@ -369,38 +390,26 @@ def _reserved_note(construct: str) -> str:
     return f"construct '{construct}' is reserved (not built yet; implemented by unit {unit})"
 
 
-def validate_only(path_or_text: str) -> ValidationResult:
+def validate_only(text: str) -> ValidationResult:
     """Validate a workflow spec WITHOUT running it (FR-1.3). NEVER raises.
 
-    Accepts either a filesystem path to a YAML spec or the raw YAML text. The
-    byte-cap is enforced BEFORE parsing so an oversized spec fails fast without
-    constructing a giant object graph. On any parse/grammar failure returns
-    ``status="fail"`` with split reasons (BR-7). On success, reserved constructs
-    (per TIER_REGISTRY + WORKFLOW_SHIPPED_UNITS) yield ``pass_reserved`` with
+    Accepts the raw YAML **text** of a spec (NOT a path). The byte-cap is
+    enforced BEFORE parsing so an oversized spec fails fast without constructing
+    a giant object graph. On any parse/grammar failure returns ``status="fail"``
+    with split reasons (BR-7). On success, reserved constructs (per
+    TIER_REGISTRY + WORKFLOW_SHIPPED_UNITS) yield ``pass_reserved`` with
     honesty-worded notes; a fully-shipped (sequential-only) spec yields ``pass``.
 
-    ``path``-typed inputs are NOT touched here (SD-1.2): no filesystem access at
-    authoring time. The shared path validator runs at run start (N5).
+    This function does NO filesystem access (SD-1.2): it never opens a path, so
+    no user-controlled value reaches a file API here. File reading lives behind
+    the shared path validator in ``workflow_spec_service`` (``_safe_spec_path``),
+    which decodes the bytes and passes the resulting text down to us. Keeping the
+    model text-only removes the path-injection sink at the source rather than
+    relying on the scanner to recognize a sanitizer across a call boundary.
     """
-    # Resolve text: treat as a path if it points at an existing file, else as
-    # raw YAML. A path is read as bytes so the byte-cap precedes parsing.
-    text = path_or_text
-    try:
-        if os.path.isfile(path_or_text):
-            with open(path_or_text, "rb") as fh:
-                raw = fh.read()
-            if len(raw) > WORKFLOW_MAX_SPEC_BYTES:
-                logger.debug("validate_only: spec exceeds byte cap (%d bytes)", len(raw))
-                return ValidationResult(
-                    status="fail",
-                    errors=[f"spec is {len(raw)} bytes (max {WORKFLOW_MAX_SPEC_BYTES})"],
-                )
-            text = raw.decode("utf-8")
-    except (OSError, ValueError) as exc:
-        logger.debug("validate_only: could not read spec source: %s", exc)
-        return ValidationResult(status="fail", errors=[f"could not read spec: {exc}"])
-
-    # Byte cap for raw-text input too (the path branch already checked + returned).
+    # Byte cap on the supplied text. The service enforces the same cap on raw
+    # bytes before decoding; this guards direct text callers (e.g. the API
+    # validate endpoint and unit tests) and any oversized post-decode content.
     if len(text.encode("utf-8")) > WORKFLOW_MAX_SPEC_BYTES:
         return ValidationResult(
             status="fail",
