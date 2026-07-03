@@ -48,12 +48,8 @@ TMUX_HISTORY_LINES = 200
 # =============================================================================
 # Application Directory Structure
 # =============================================================================
-# Base directory for all CAO data (~/.aws/cli-agent-orchestrator by default).
-# Desktop launches can override this per Workspace to isolate databases, logs,
-# FIFOs, and memory without writing runtime state into the project directory.
-CAO_HOME_DIR = Path(
-    os.environ.get("CAO_HOME_DIR", str(Path.home() / ".aws" / "cli-agent-orchestrator"))
-).expanduser()
+# Base directory for all CAO data (~/.aws/cli-agent-orchestrator)
+CAO_HOME_DIR = Path.home() / ".aws" / "cli-agent-orchestrator"
 
 # Managed environment variable file
 CAO_ENV_FILE = CAO_HOME_DIR / ".env"

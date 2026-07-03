@@ -34,13 +34,6 @@ class TestHealthCheck:
         data = response.json()
         assert data["status"] == "ok"
         assert data["service"] == "cli-agent-orchestrator"
-        assert data["version"]
-        assert data["capabilities"] == {
-            "configurable_cao_home": True,
-            "terminal_ws": True,
-            "events_sse": True,
-            "workspace_scoped_server": True,
-        }
         components = data["components"]
         assert components["cao"] == "ok"
         assert components["herdr"] in ("ok", "unavailable")

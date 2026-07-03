@@ -260,30 +260,6 @@ class TestCaoHomeDir:
 
         assert isinstance(CAO_HOME_DIR, Path)
 
-    def test_cao_home_dir_can_be_overridden_by_env(self, tmp_path):
-        """Test that desktop launches can isolate CAO state with CAO_HOME_DIR."""
-        import importlib
-        import os
-
-        import cli_agent_orchestrator.constants as constants_module
-
-        env_copy = os.environ.copy()
-        env_copy["CAO_HOME_DIR"] = str(tmp_path / "workspace-home")
-        try:
-            with patch.dict("os.environ", env_copy, clear=True):
-                importlib.reload(constants_module)
-                assert constants_module.CAO_HOME_DIR == tmp_path / "workspace-home"
-                assert constants_module.DB_DIR == constants_module.CAO_HOME_DIR / "db"
-                assert (
-                    constants_module.TERMINAL_LOG_DIR
-                    == constants_module.CAO_HOME_DIR / "logs" / "terminal"
-                )
-                assert constants_module.FIFO_DIR == constants_module.CAO_HOME_DIR / "fifos"
-        finally:
-            env_copy.pop("CAO_HOME_DIR", None)
-            with patch.dict("os.environ", env_copy, clear=True):
-                importlib.reload(constants_module)
-
     def test_db_dir_is_under_cao_home(self):
         """Test that DB_DIR is under CAO_HOME_DIR."""
         from cli_agent_orchestrator.constants import CAO_HOME_DIR, DB_DIR
