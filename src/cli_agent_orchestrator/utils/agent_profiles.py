@@ -67,6 +67,7 @@ def _scan_directory(directory: Path, source_label: str, profiles: Dict[str, Dict
                     "description": desc,
                     "role": role,
                     "source": source_label,
+                    "path": str(agent_md if agent_md.exists() else item),
                 }
         elif item.suffix == ".md" and item.is_file():
             profile_name = item.stem
@@ -84,6 +85,7 @@ def _scan_directory(directory: Path, source_label: str, profiles: Dict[str, Dict
                     "description": desc,
                     "role": role,
                     "source": source_label,
+                    "path": str(item),
                 }
 
 
@@ -114,6 +116,7 @@ def list_agent_profiles() -> List[Dict]:
                         "description": data.metadata.get("description", ""),
                         "role": data.metadata.get("role", ""),
                         "source": "built-in",
+                        "path": str(item),
                     }
                 except Exception:
                     profiles[profile_name] = {
@@ -121,6 +124,7 @@ def list_agent_profiles() -> List[Dict]:
                         "description": "",
                         "role": "",
                         "source": "built-in",
+                        "path": str(item),
                     }
     except Exception as e:
         logger.debug(f"Could not scan built-in agent store: {e}")

@@ -94,7 +94,12 @@ from cli_agent_orchestrator.services.event_primitives import KINDS as EVENT_KIND
 from cli_agent_orchestrator.services.herdr_inbox_registry import set_herdr_inbox_service
 from cli_agent_orchestrator.services.herdr_inbox_service import HerdrInboxService
 from cli_agent_orchestrator.services.inbox_service import inbox_service
-from cli_agent_orchestrator.services.install_service import InstallResult, install_agent
+from cli_agent_orchestrator.services.install_service import (
+    InstallResult,
+    ProfileImportResult,
+    import_agent_profile,
+    install_agent,
+)
 from cli_agent_orchestrator.services.log_writer import log_writer
 from cli_agent_orchestrator.services.status_monitor import status_monitor
 from cli_agent_orchestrator.services.terminal_service import OutputMode, TerminalInputBlockedError
@@ -275,6 +280,12 @@ class InstallAgentProfileRequest(BaseModel):
     source: str
     provider: str = DEFAULT_PROVIDER
     env_vars: Optional[Dict[str, str]] = None
+
+
+class ImportAgentProfileRequest(BaseModel):
+    """Request body for importing a provider-independent agent profile."""
+
+    source: str
 
 
 class MemorySummary(BaseModel):
@@ -672,6 +683,23 @@ async def install_agent_profile_endpoint(
     if not result.success:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.message)
 
+    return result
+
+
+@app.post("/agents/profiles/import")
+async def import_agent_profile_endpoint(
+    request: ImportAgentProfileRequest,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> ProfileImportResult:
+    """Import an agent profile into CAO's local profile store.
+
+    Unlike ``/agents/profiles/install``, this endpoint does not write any
+    provider-specific files. The provider is selected later when creating an
+    agent from the imported profile.
+    """
+    result = import_agent_profile(source=request.source)
+    if not result.success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.message)
     return result
 
 

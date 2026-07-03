@@ -151,7 +151,7 @@ select {
 }
 
 .nav-row {
-  min-height: 40px;
+  height: 40px;
   width: 100%;
   display: flex;
   align-items: center;
@@ -177,6 +177,11 @@ select {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
+.nav-row-icon {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.52);
+}
+
 .workspace-tree {
   gap: 8px;
 }
@@ -188,6 +193,7 @@ select {
 }
 
 .workspace-row {
+  height: 40px;
   cursor: default;
 }
 
@@ -200,16 +206,16 @@ select {
 }
 
 .agent-row {
-  min-height: 46px;
+  height: 46px;
 }
 
 .nested-agent-row {
-  min-height: 42px;
+  height: 42px;
   padding-left: 8px;
 }
 
 .nested-create-row {
-  min-height: 34px;
+  height: 34px;
   padding-left: 8px;
   color: rgba(255, 255, 255, 0.52);
   font-size: 13px;
@@ -577,6 +583,114 @@ select {
 .agent-tab.is-active {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.92);
+}
+
+.settings-profiles-panel {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.settings-install-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-source-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.settings-file-button {
+  min-width: 46px;
+  width: 46px;
+  padding: 0;
+  border-radius: 13px;
+}
+
+.settings-success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(61, 220, 132, 0.22);
+  background: rgba(61, 220, 132, 0.1);
+  color: #8ff0b8;
+  font-size: 12px;
+}
+
+.settings-profile-list {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-profile-empty {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(17, 17, 18, 0.52);
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 12px;
+}
+
+.settings-profile-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.5fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(17, 17, 18, 0.58);
+}
+
+.settings-profile-row.is-revealable {
+  cursor: default;
+}
+
+.settings-profile-row.is-revealable:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.settings-profile-main {
+  min-width: 0;
+}
+
+.settings-profile-name {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-profile-meta {
+  margin-top: 3px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-profile-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
 }
 
 /* Inbox */

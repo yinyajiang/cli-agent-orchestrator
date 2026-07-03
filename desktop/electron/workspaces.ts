@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { request } from 'node:http'
 import { resolve } from 'node:path'
-import type { AgentRecord, Settings, WorkspaceRecord, WorkspaceStatus } from '../src/types.js'
+import type { AgentRecord, Settings, WorkspaceRecord } from '../src/types.js'
 import type { CaoServerManager } from './server.js'
 import { loadState, saveState, upsertWorkspace, type PersistedState } from './state.js'
 
@@ -29,57 +29,25 @@ export class WorkspaceManager {
     const state = loadState()
     const id = workspaceId(canonical)
     const existing = state.workspaces.find((workspace) => workspace.id === id)
-    const endpoint = this.server.currentEndpoint
 
-    if (existing?.status === 'ready' && endpoint && this.server.isReady()) {
-      const readyWorkspace = { ...existing, port: endpoint.port, baseUrl: endpoint.baseUrl }
-      upsertWorkspace(state, readyWorkspace)
-      saveState(state)
-      return readyWorkspace
-    }
+    if (existing) return existing
 
     const record: WorkspaceRecord = {
       id,
       name: workspaceName(canonical),
       path: canonical,
-      port: endpoint?.port ?? null,
-      baseUrl: endpoint?.baseUrl ?? null,
-      status: 'starting',
       sessionName: null,
-      error: null,
       agents: [],
     }
     upsertWorkspace(state, record)
     saveState(state)
 
-    void this.finishWorkspaceStartup(id)
-
     return record
-  }
-
-  async closeWorkspace(id: string) {
-    const state = loadState()
-    await cleanupWorkspace(state, id)
-    state.workspaces = state.workspaces.map((workspace) =>
-      workspace.id === id
-        ? {
-            ...workspace,
-            status: 'stopped' as WorkspaceStatus,
-            port: null,
-            baseUrl: null,
-            sessionName: null,
-            error: null,
-            agents: [],
-          }
-        : workspace,
-    )
-    saveState(state)
-    return state.workspaces
   }
 
   async forgetWorkspace(id: string) {
     const state = loadState()
-    await cleanupWorkspace(state, id)
+    await cleanupWorkspace(state, id, this.server.currentEndpoint?.baseUrl ?? null)
     state.workspaces = state.workspaces.filter((workspace) => workspace.id !== id)
     saveState(state)
     return state.workspaces
@@ -121,13 +89,10 @@ export class WorkspaceManager {
     try {
       if (state.settings.cleanupOnExit) {
         for (const workspace of state.workspaces) {
-          await cleanupWorkspace(state, workspace.id)
+          await cleanupWorkspace(state, workspace.id, this.server.currentEndpoint?.baseUrl ?? null)
         }
         state.workspaces = state.workspaces.map((workspace) => ({
           ...workspace,
-          status: 'stopped' as WorkspaceStatus,
-          port: null,
-          baseUrl: null,
           sessionName: null,
           agents: [],
         }))
@@ -136,34 +101,6 @@ export class WorkspaceManager {
     } finally {
       this.server.stop()
     }
-  }
-
-  private async finishWorkspaceStartup(id: string) {
-    const current = loadState()
-    const workspace = current.workspaces.find((item) => item.id === id)
-    if (!workspace || workspace.status !== 'starting') return
-
-    let nextWorkspace: WorkspaceRecord
-    try {
-      const server = await this.server.ensure(current.settings)
-      nextWorkspace = {
-        ...workspace,
-        status: 'ready',
-        port: server.port,
-        baseUrl: server.baseUrl,
-        error: null,
-      }
-    } catch (error) {
-      nextWorkspace = {
-        ...workspace,
-        status: 'error',
-        error: error instanceof Error ? error.message : String(error),
-      }
-    }
-
-    const nextState = loadState()
-    upsertWorkspace(nextState, nextWorkspace)
-    saveState(nextState)
   }
 }
 
@@ -175,10 +112,10 @@ function workspaceName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? 'Workspace'
 }
 
-async function cleanupWorkspace(state: PersistedState, id: string) {
+async function cleanupWorkspace(state: PersistedState, id: string, baseUrl: string | null) {
   const workspace = state.workspaces.find((item) => item.id === id)
-  if (workspace?.baseUrl && workspace.sessionName) {
-    await httpDelete(`${workspace.baseUrl}/sessions/${encodeURIComponent(workspace.sessionName)}`)
+  if (baseUrl && workspace?.sessionName) {
+    await httpDelete(`${baseUrl}/sessions/${encodeURIComponent(workspace.sessionName)}`)
   }
 }
 

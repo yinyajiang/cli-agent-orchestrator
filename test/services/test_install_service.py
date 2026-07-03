@@ -9,7 +9,11 @@ import pytest
 import requests  # type: ignore[import-untyped]
 
 from cli_agent_orchestrator.models.agent_profile import AgentProfile
-from cli_agent_orchestrator.services.install_service import InstallResult, install_agent
+from cli_agent_orchestrator.services.install_service import (
+    InstallResult,
+    import_agent_profile,
+    install_agent,
+)
 from cli_agent_orchestrator.utils.skill_injection import refresh_agent_md_prompt
 
 
@@ -90,6 +94,32 @@ def install_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, 
         "extra_dir": extra_dir,
         "env_file": env_file,
     }
+
+
+class TestImportAgentProfile:
+    """Tests for provider-independent profile import."""
+
+    def test_import_from_provider_dir_copies_to_local_store(
+        self, install_paths: dict[str, Path]
+    ) -> None:
+        provider_profile = install_paths["provider_dir"] / "service-agent.md"
+        provider_profile.write_text(_profile_text(name="service-agent"), encoding="utf-8")
+
+        result = import_agent_profile("service-agent")
+
+        assert result.success is True
+        assert result.agent_name == "service-agent"
+        assert result.source_kind == "name"
+        assert result.profile_file == str(install_paths["local_store_dir"] / "service-agent.md")
+        assert (install_paths["local_store_dir"] / "service-agent.md").read_text(
+            encoding="utf-8"
+        ) == provider_profile.read_text(encoding="utf-8")
+
+    def test_import_rejects_invalid_name(self, install_paths: dict[str, Path]) -> None:
+        result = import_agent_profile("../secret")
+
+        assert result.success is False
+        assert "Invalid profile name" in result.message
 
 
 class TestInstallAgent:

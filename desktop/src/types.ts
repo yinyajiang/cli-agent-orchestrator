@@ -1,4 +1,3 @@
-export type WorkspaceStatus = 'stopped' | 'starting' | 'ready' | 'error'
 export type TerminalBackendName = 'tmux' | 'herdr'
 
 export interface Settings {
@@ -25,11 +24,7 @@ export interface WorkspaceRecord {
   id: string
   name: string
   path: string
-  port: number | null
-  baseUrl: string | null
-  status: WorkspaceStatus
   sessionName: string | null
-  error: string | null
   agents: AgentRecord[]
 }
 
@@ -38,6 +33,15 @@ export interface AgentProfileInfo {
   description: string
   role?: string
   source: string
+  path?: string
+}
+
+export interface ImportProfileResult {
+  success: boolean
+  message: string
+  agent_name?: string | null
+  profile_file?: string | null
+  source_kind?: 'url' | 'name' | null
 }
 
 export interface ProviderInfo {

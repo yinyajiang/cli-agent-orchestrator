@@ -52,6 +52,16 @@ class InstallResult(BaseModel):
     source_kind: Optional[Literal["url", "file", "name"]] = None
 
 
+class ProfileImportResult(BaseModel):
+    """Structured result for provider-independent profile import."""
+
+    success: bool
+    message: str
+    agent_name: Optional[str] = None
+    profile_file: Optional[str] = None
+    source_kind: Optional[Literal["url", "name"]] = None
+
+
 # Profile names are used as filesystem path segments under LOCAL_AGENT_STORE_DIR
 # and provider agent dirs. Restricting to [A-Za-z0-9_-] with a 64-char cap blocks
 # traversal ("../etc/passwd"), separators, and absolute paths at the boundary.
@@ -155,6 +165,48 @@ def parse_env_assignment(env_assignment: str) -> Tuple[str, str]:
         raise ValueError(f"Invalid env var '{env_assignment}'. Key must not be empty.")
 
     return key, value
+
+
+def import_agent_profile(source: str) -> ProfileImportResult:
+    """Import a profile into CAO's local profile store without binding a provider.
+
+    This is the desktop-friendly profile install path: operators add a profile
+    once, then choose the provider later when creating an agent.
+    """
+    try:
+        LOCAL_AGENT_STORE_DIR.mkdir(parents=True, exist_ok=True)
+        if source.startswith(("http://", "https://")):
+            agent_name = _download_agent(source)
+            source_kind: Literal["url", "name"] = "url"
+        else:
+            if not _PROFILE_NAME_RE.fullmatch(source):
+                return ProfileImportResult(
+                    success=False,
+                    message=(
+                        f"Invalid profile name '{source}'. "
+                        "Expected a name matching [A-Za-z0-9_-]{1,64} or an https:// URL."
+                    ),
+                )
+            agent_name = source
+            source_kind = "name"
+            raw_content = _read_agent_profile_source(agent_name)
+            profile_file = LOCAL_AGENT_STORE_DIR / f"{agent_name}.md"
+            profile_file.write_text(raw_content, encoding="utf-8")
+
+        profile_file = LOCAL_AGENT_STORE_DIR / f"{agent_name}.md"
+        return ProfileImportResult(
+            success=True,
+            message=f"Profile '{agent_name}' imported successfully",
+            agent_name=agent_name,
+            profile_file=str(profile_file),
+            source_kind=source_kind,
+        )
+    except requests.RequestException as exc:
+        return ProfileImportResult(success=False, message=f"Failed to download profile: {exc}")
+    except FileNotFoundError as exc:
+        return ProfileImportResult(success=False, message=str(exc))
+    except Exception as exc:
+        return ProfileImportResult(success=False, message=f"Failed to import profile: {exc}")
 
 
 def _write_context_file(agent_name: str, raw_content: str) -> Path:

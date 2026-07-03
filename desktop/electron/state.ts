@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Settings, WorkspaceRecord, WorkspaceStatus } from '../src/types.js'
+import type { Settings, WorkspaceRecord } from '../src/types.js'
 import { defaultSettings } from './settings.js'
 
 export interface PersistedState {
@@ -24,21 +24,29 @@ function defaultState(): PersistedState {
   }
 }
 
+function normalizeWorkspace(workspace: WorkspaceRecord): WorkspaceRecord {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    path: workspace.path,
+    sessionName: workspace.sessionName ?? null,
+    agents: workspace.agents ?? [],
+  }
+}
+
 function normalizeState(state: PersistedState): PersistedState {
   return {
     settings: {
       ...defaultSettings,
       ...state.settings,
     },
-    workspaces: state.workspaces.map((workspace) => ({
-      ...workspace,
-      status: 'stopped' as WorkspaceStatus,
-      port: null,
-      baseUrl: null,
-      sessionName: null,
-      error: null,
-      agents: [],
-    })),
+    workspaces: state.workspaces.map((workspace) =>
+      normalizeWorkspace({
+        ...workspace,
+        sessionName: null,
+        agents: [],
+      }),
+    ),
   }
 }
 
@@ -47,7 +55,14 @@ export function loadState(options: { normalizeRuntimeState?: boolean } = {}): Pe
     const path = statePath()
     if (!existsSync(path)) return defaultState()
     const state = { ...defaultState(), ...JSON.parse(readFileSync(path, 'utf8')) }
-    return options.normalizeRuntimeState ? normalizeState(state) : state
+    if (options.normalizeRuntimeState) return normalizeState(state)
+    return {
+      settings: {
+        ...defaultSettings,
+        ...state.settings,
+      },
+      workspaces: state.workspaces.map((workspace: WorkspaceRecord) => normalizeWorkspace(workspace)),
+    }
   } catch {
     return defaultState()
   }

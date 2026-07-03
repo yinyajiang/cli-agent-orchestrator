@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 from cli_agent_orchestrator.models.agent_profile import AgentProfile
-from cli_agent_orchestrator.services.install_service import InstallResult
+from cli_agent_orchestrator.services.install_service import InstallResult, ProfileImportResult
 
 
 class TestGetAgentProfileEndpoint:
@@ -138,3 +138,42 @@ class TestInstallAgentProfileEndpoint:
         )
 
         assert response.status_code == 422
+
+
+class TestImportAgentProfileEndpoint:
+    """Tests for POST /agents/profiles/import."""
+
+    def test_returns_import_result(self, client) -> None:
+        service_result = ProfileImportResult(
+            success=True,
+            message="Profile 'developer' imported successfully",
+            agent_name="developer",
+            profile_file="/tmp/agent-store/developer.md",
+            source_kind="name",
+        )
+
+        with patch(
+            "cli_agent_orchestrator.api.main.import_agent_profile",
+            return_value=service_result,
+        ) as mock_import:
+            response = client.post(
+                "/agents/profiles/import",
+                json={"source": "developer"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == service_result.model_dump()
+        mock_import.assert_called_once_with(source="developer")
+
+    def test_returns_400_for_import_failure(self, client) -> None:
+        with patch(
+            "cli_agent_orchestrator.api.main.import_agent_profile",
+            return_value=ProfileImportResult(success=False, message="Agent profile not found: missing"),
+        ):
+            response = client.post(
+                "/agents/profiles/import",
+                json={"source": "missing"},
+            )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Agent profile not found: missing"

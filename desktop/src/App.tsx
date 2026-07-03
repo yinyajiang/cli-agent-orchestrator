@@ -3,13 +3,12 @@ import {
   CheckCircle2,
   Circle,
   Copy,
+  Folder,
   FolderOpen,
   Loader2,
   MoreHorizontal,
-  Play,
   Plus,
   Settings as SettingsIcon,
-  Square,
   Mail,
   Send,
   Trash2,
@@ -34,6 +33,7 @@ import type {
 type CreateAgentValues = { profile: string; provider: string; displayName: string }
 type BackendInfo = { backend: TerminalBackendName | null }
 type AgentDetailsTarget = { workspace: WorkspaceRecord; agent: AgentRecord }
+type ServerEndpoint = { port: number; baseUrl: string }
 
 const defaultSettings: Settings = {
   serverCommand: 'cao-server',
@@ -136,11 +136,11 @@ export default function App() {
   const [createOpen, setCreateOpen] = useState(false)
   const [profiles, setProfiles] = useState<AgentProfileInfo[]>([])
   const [providers, setProviders] = useState<ProviderInfo[]>([])
+  const [serverEndpoint, setServerEndpoint] = useState<ServerEndpoint | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [agentDetails, setAgentDetails] = useState<AgentDetailsTarget | null>(null)
   const [pendingCreates, setPendingCreates] = useState<Record<string, CreateAgentValues>>({})
-  const [workspaceOperations, setWorkspaceOperations] = useState<Record<string, 'starting' | 'stopping'>>({})
   // Live terminal status is a runtime-only concern (like web's terminalStatuses map):
   // it is NOT persisted through IPC and is refreshed by polling GET /terminals/{id}.
   const [terminalStatuses, setTerminalStatuses] = useState<Record<string, string>>({})
@@ -149,21 +149,24 @@ export default function App() {
   const [childWorkers, setChildWorkers] = useState<Record<string, AgentRecord[]>>({})
   const workspacesRef = useRef(workspaces)
   workspacesRef.current = workspaces
+  const serverBaseUrlRef = useRef<string | null>(null)
 
+  const serverBaseUrl = serverEndpoint?.baseUrl ?? null
+  serverBaseUrlRef.current = serverBaseUrl
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null
   const selectedAgent = (() => {
     const ws = selectedWorkspace
-    if (!ws) return null
+    if (!ws || !selectedAgentId) return null
     // A selected id may point at a user-created agent OR one of its workers.
     const withChildren = ws.agents.flatMap((agent) => [
       agent,
       ...(childWorkers[agent.terminalId] ?? []),
     ])
-    return withChildren.find((agent) => agent.terminalId === selectedAgentId) ?? ws.agents[0] ?? null
+    return withChildren.find((agent) => agent.terminalId === selectedAgentId) ?? null
   })()
   const isTerminalVisible = Boolean(
-    selectedWorkspace?.status === 'ready' &&
-      selectedWorkspace.baseUrl &&
+    selectedWorkspace &&
+      serverBaseUrl &&
       selectedAgent &&
       !isPendingAgent(selectedAgent) &&
       agentHasStatus(selectedAgent, terminalStatuses),
@@ -172,15 +175,11 @@ export default function App() {
   // still `unknown`/null) — show a loading state instead of attaching an empty
   // terminal before the agent is ready.
   const isAgentPreparing = Boolean(
-    selectedWorkspace?.status === 'ready' &&
-      selectedWorkspace.baseUrl &&
+    selectedWorkspace &&
+      serverBaseUrl &&
       selectedAgent &&
       !isPendingAgent(selectedAgent) &&
       !isTerminalVisible,
-  )
-  const hasStartingWorkspace = useMemo(
-    () => workspaces.some((workspace) => workspace.status === 'starting'),
-    [workspaces],
   )
 
   useEffect(() => {
@@ -194,11 +193,11 @@ export default function App() {
   }, [selectedWorkspace, workspaces])
 
   useEffect(() => {
-    if (!selectedWorkspace?.baseUrl || selectedWorkspace.status !== 'ready') return
-    void loadWorkspaceCatalog(selectedWorkspace)
-  }, [selectedWorkspace?.id, selectedWorkspace?.baseUrl, selectedWorkspace?.status])
+    if (!serverBaseUrl) return
+    void loadCatalog(serverBaseUrl)
+  }, [serverBaseUrl])
 
-  // Poll live terminal status for every ready workspace's agents. The interval
+  // Poll live terminal status for every workspace session's agents. The interval
   // is created once and reads workspacesRef, so it always sees the freshest agent
   // ids — no closure staleness, no agent missed (the cause of status stuck on
   // "unknown"). Mirrors web's 3s getTerminalStatus polling; SSE is intentionally
@@ -210,14 +209,6 @@ export default function App() {
     return () => window.clearInterval(poll)
   }, [])
 
-  useEffect(() => {
-    if (!hasStartingWorkspace) return
-    const poll = window.setInterval(() => {
-      void refreshWorkspaces()
-    }, 500)
-    return () => window.clearInterval(poll)
-  }, [hasStartingWorkspace])
-
   async function bootstrap() {
     const [storedWorkspaces, storedSettings] = await Promise.all([
       window.caoDesktop.listWorkspaces(),
@@ -226,6 +217,16 @@ export default function App() {
     setWorkspaces(storedWorkspaces)
     setSettings(storedSettings)
     setSelectedWorkspaceId(storedWorkspaces[0]?.id ?? null)
+    void ensureServerEndpoint().catch((error) => {
+      setNotice(error instanceof Error ? error.message : String(error))
+    })
+  }
+
+  async function ensureServerEndpoint() {
+    if (serverEndpoint) return serverEndpoint
+    const endpoint = await window.caoDesktop.ensureServer()
+    setServerEndpoint(endpoint)
+    return endpoint
   }
 
   async function refreshWorkspaces(next?: WorkspaceRecord[]) {
@@ -245,58 +246,17 @@ export default function App() {
   }
 
   async function openWorkspace(path?: string) {
-    let operationId: string | null = null
     try {
       setNotice(null)
       const chosen = path ?? (await window.caoDesktop.chooseDirectory())
       if (!chosen) return
-      const existing = workspaces.find((workspace) => workspace.path === chosen)
-      operationId = existing?.id ?? null
-      if (operationId) {
-        setWorkspaceOperations((current) => ({ ...current, [operationId!]: 'starting' }))
-      }
       const workspace = await window.caoDesktop.openWorkspace(chosen)
-      operationId = workspace.id
-      setWorkspaceOperations((current) => ({ ...current, [workspace.id]: 'starting' }))
       showWorkspaceImmediately(workspace)
       setSelectedWorkspaceId(workspace.id)
       setSelectedAgentId(workspace.agents[0]?.terminalId ?? null)
-      const fresh = await refreshWorkspaces()
-      const updated = fresh.find((item) => item.id === workspace.id) ?? workspace
-      if (updated.status === 'error') {
-        setNotice(updated.error ?? 'Install or update cao-server, then retry.')
-      }
+      await refreshWorkspaces()
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error))
-    } finally {
-      if (operationId) {
-        setWorkspaceOperations((current) => {
-          const next = { ...current }
-          delete next[operationId!]
-          return next
-        })
-      }
-    }
-  }
-
-  async function closeWorkspace(id: string) {
-    try {
-      setNotice(null)
-      setWorkspaceOperations((current) => ({ ...current, [id]: 'stopping' }))
-      const fresh = await window.caoDesktop.closeWorkspace(id)
-      setWorkspaces(fresh)
-      if (selectedWorkspaceId === id) {
-        setSelectedWorkspaceId(id)
-        setSelectedAgentId(null)
-      }
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error))
-    } finally {
-      setWorkspaceOperations((current) => {
-        const next = { ...current }
-        delete next[id]
-        return next
-      })
     }
   }
 
@@ -309,12 +269,11 @@ export default function App() {
     }
   }
 
-  async function loadWorkspaceCatalog(workspace: WorkspaceRecord) {
-    if (!workspace.baseUrl) return
+  async function loadCatalog(baseUrl: string) {
     try {
       const [profileList, providerList] = await Promise.all([
-        caoApi.listProfiles(workspace.baseUrl),
-        caoApi.listProviders(workspace.baseUrl),
+        caoApi.listProfiles(baseUrl),
+        caoApi.listProviders(baseUrl),
       ])
       setProfiles(profileList)
       setProviders(providerList)
@@ -324,10 +283,9 @@ export default function App() {
   }
 
   async function refreshTerminalTree() {
-    const ready = workspacesRef.current.filter(
-      (workspace) =>
-        workspace.status === 'ready' && workspace.baseUrl && workspace.sessionName,
-    )
+    const baseUrl = serverBaseUrlRef.current
+    if (!baseUrl) return
+    const ready = workspacesRef.current.filter((workspace) => workspace.sessionName)
     if (ready.length === 0) {
       setChildWorkers({})
       return
@@ -337,12 +295,12 @@ export default function App() {
     await Promise.all(
       ready.map(async (workspace) => {
         try {
-          const terminals = await caoApi.listTerminals(workspace.baseUrl!, workspace.sessionName!)
+          const terminals = await caoApi.listTerminals(baseUrl, workspace.sessionName!)
           // Live status for every terminal in the session (user-created + workers).
           await Promise.all(
             terminals.map(async (t) => {
               try {
-                const terminal = await caoApi.getTerminal(workspace.baseUrl!, t.id)
+                const terminal = await caoApi.getTerminal(baseUrl, t.id)
                 if (terminal.status) statusUpdates[t.id] = terminal.status
               } catch {
                 // terminal gone — it drops out of the list on the next poll
@@ -385,8 +343,15 @@ export default function App() {
   }
 
   async function createAgent(values: CreateAgentValues) {
-    if (!selectedWorkspace?.baseUrl) return
+    if (!selectedWorkspace) return
     const workspace = selectedWorkspace
+    let endpoint: ServerEndpoint
+    try {
+      endpoint = await ensureServerEndpoint()
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error))
+      return
+    }
     const tempId = `pending-${Date.now()}-${Math.random().toString(16).slice(2)}`
     const displayName = values.displayName.trim() || null
     const sessionName = workspace.sessionName ?? desktopSessionName(workspace)
@@ -416,10 +381,11 @@ export default function App() {
     )
     setSelectedAgentId(tempId)
 
-    void createAgentInBackground(workspace, values, tempId, displayName, sessionName)
+    void createAgentInBackground(endpoint.baseUrl, workspace, values, tempId, displayName, sessionName)
   }
 
   async function createAgentInBackground(
+    baseUrl: string,
     workspace: WorkspaceRecord,
     values: CreateAgentValues,
     tempId: string,
@@ -429,19 +395,19 @@ export default function App() {
     try {
       let terminal: Terminal | null = null
       let createError: Error | null = null
-      const backendInfo = await readBackendInfo(workspace.baseUrl!)
+      const backendInfo = await readBackendInfo(baseUrl)
 
       try {
         terminal = workspace.sessionName
           ? await caoApi.addTerminal(
-              workspace.baseUrl!,
+              baseUrl,
               workspace.sessionName,
               values.provider,
               values.profile,
               workspace.path,
             )
           : await caoApi.createSession(
-              workspace.baseUrl!,
+              baseUrl,
               values.provider,
               values.profile,
               `desktop-${workspace.id}`,
@@ -459,6 +425,7 @@ export default function App() {
           syncSessionName,
           terminal?.id ?? null,
           displayName,
+          baseUrl,
         )
       } catch (syncError) {
         if (!terminal) throw createError ?? syncError
@@ -531,14 +498,14 @@ export default function App() {
     sessionName: string,
     displayNameTerminalId: string | null,
     displayName: string | null,
+    baseUrl: string,
   ) {
-    if (!workspace.baseUrl) return []
-    const backendInfo = await readBackendInfo(workspace.baseUrl)
+    const backendInfo = await readBackendInfo(baseUrl)
     let terminals: TerminalMeta[] = []
     let lastError: unknown = null
     for (let attempt = 0; attempt < 20; attempt += 1) {
       try {
-        terminals = await caoApi.listTerminals(workspace.baseUrl, sessionName)
+        terminals = await caoApi.listTerminals(baseUrl, sessionName)
         if (terminals.length > 0) break
       } catch (error) {
         lastError = error
@@ -564,21 +531,13 @@ export default function App() {
     return agents
   }
 
-  function requestCreateAgent() {
-    if (!selectedWorkspace) {
+  function requestCreateAgent(workspace = selectedWorkspace) {
+    if (!workspace) {
       setNotice('Open a Workspace first.')
       return
     }
-    if (selectedWorkspace.status !== 'ready') {
-      setNotice(
-        selectedWorkspace.error ??
-          'Workspace server is not ready. Install or update cao-server, then retry.',
-      )
-      if (selectedWorkspace.status === 'stopped' || selectedWorkspace.status === 'error') {
-        void openWorkspace(selectedWorkspace.path)
-      }
-      return
-    }
+    setSelectedWorkspaceId(workspace.id)
+    setSelectedAgentId(workspace.agents[0]?.terminalId ?? null)
     setCreateOpen(true)
   }
 
@@ -600,14 +559,15 @@ export default function App() {
       if (selectedAgentId === agent.terminalId) setSelectedAgentId(nextAgents[0]?.terminalId ?? null)
       return
     }
-    if (!workspace?.baseUrl) return
+    if (!workspace) return
     try {
+      const { baseUrl } = await ensureServerEndpoint()
       const isLast = workspace.agents.length === 1
       if (isLast) {
-        await caoApi.deleteSession(workspace.baseUrl, agent.sessionName)
+        await caoApi.deleteSession(baseUrl, agent.sessionName)
         await window.caoDesktop.updateWorkspaceSession(workspace.id, null)
       } else {
-        await caoApi.deleteTerminal(workspace.baseUrl, agent.terminalId)
+        await caoApi.deleteTerminal(baseUrl, agent.terminalId)
       }
       const fresh = await window.caoDesktop.removeAgent(workspace.id, agent.terminalId)
       setWorkspaces(fresh)
@@ -666,8 +626,7 @@ export default function App() {
           </div>
           <div className="nav-list workspace-tree min-h-0 flex-1">
             {workspaces.map((workspace) => {
-              const isWorkspaceSelected = selectedWorkspaceId === workspace.id
-              const workspaceOperation = workspaceOperations[workspace.id]
+              const isWorkspaceSelected = selectedWorkspaceId === workspace.id && !selectedAgentId
               return (
                 <div key={workspace.id} className="workspace-group">
                   <div
@@ -676,118 +635,106 @@ export default function App() {
                     tabIndex={0}
                     onClick={() => {
                       setSelectedWorkspaceId(workspace.id)
-                      setSelectedAgentId(workspace.agents[0]?.terminalId ?? null)
+                      setSelectedAgentId(null)
                     }}
                     onKeyDown={(event) => {
                       if (event.key !== 'Enter' && event.key !== ' ') return
                       event.preventDefault()
                       setSelectedWorkspaceId(workspace.id)
-                      setSelectedAgentId(workspace.agents[0]?.terminalId ?? null)
+                      setSelectedAgentId(null)
                     }}
                   >
-                    <WorkspaceDot status={workspace.status} />
+                    <Folder size={16} className="nav-row-icon" />
                     <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                    <WorkspaceActionButton
-                      workspace={workspace}
-                      operation={workspaceOperation}
-                      onStart={() => void openWorkspace(workspace.path)}
-                      onStop={() => void closeWorkspace(workspace.id)}
-                    />
                     <button
                       title="Forget workspace"
                       className="row-action"
-                      disabled={Boolean(workspaceOperation) || workspace.status === 'starting'}
                       onClick={(event) => {
                         event.stopPropagation()
                         void forgetWorkspace(workspace.id)
                       }}
                     >
-                      <X size={14} />
+                      <Trash2 size={14} />
                     </button>
                   </div>
 
-                  {workspace.agents.length > 0 || isWorkspaceSelected ? (
-                    <div className="workspace-agents">
-                      {workspace.agents.flatMap((agent) => [
+                  <div className="workspace-agents">
+                    {workspace.agents.flatMap((agent) => [
+                      <div
+                        key={agent.terminalId}
+                        className={`nav-row agent-row nested-agent-row ${selectedAgent?.terminalId === agent.terminalId ? 'is-selected' : ''}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          setSelectedWorkspaceId(workspace.id)
+                          setSelectedAgentId(agent.terminalId)
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return
+                          event.preventDefault()
+                          setSelectedWorkspaceId(workspace.id)
+                          setSelectedAgentId(agent.terminalId)
+                        }}
+                      >
+                        <AgentStatusIcon status={statusForAgent(agent, terminalStatuses)} />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate">{agent.displayName || agent.profile}</div>
+                          <div className="mono truncate text-[11px] opacity-70">{agent.provider}</div>
+                        </div>
+                        <button
+                          title="Agent details"
+                          className="row-action"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setAgentDetails({ workspace, agent })
+                          }}
+                        >
+                          <MoreHorizontal size={16} />
+                        </button>
+                        <button
+                          title="Stop agent"
+                          className="row-action"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void deleteAgent(agent, workspace)
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>,
+                      ...(childWorkers[agent.terminalId] ?? []).map((worker) => (
                         <div
-                          key={agent.terminalId}
-                          className={`nav-row agent-row nested-agent-row ${selectedAgent?.terminalId === agent.terminalId ? 'is-selected' : ''}`}
+                          key={worker.terminalId}
+                          className={`nav-row agent-row child-agent-row ${selectedAgent?.terminalId === worker.terminalId ? 'is-selected' : ''}`}
                           role="button"
                           tabIndex={0}
                           onClick={() => {
                             setSelectedWorkspaceId(workspace.id)
-                            setSelectedAgentId(agent.terminalId)
+                            setSelectedAgentId(worker.terminalId)
                           }}
                           onKeyDown={(event) => {
                             if (event.key !== 'Enter' && event.key !== ' ') return
                             event.preventDefault()
                             setSelectedWorkspaceId(workspace.id)
-                            setSelectedAgentId(agent.terminalId)
+                            setSelectedAgentId(worker.terminalId)
                           }}
                         >
-                          <AgentStatusIcon status={statusForAgent(agent, terminalStatuses)} />
+                          <AgentStatusIcon status={statusForAgent(worker, terminalStatuses)} />
                           <div className="min-w-0 flex-1">
-                            <div className="truncate">{agent.displayName || agent.profile}</div>
-                            <div className="mono truncate text-[11px] opacity-70">{agent.provider}</div>
+                            <div className="truncate">{worker.profile}</div>
+                            <div className="mono truncate text-[11px] opacity-70">{worker.provider}</div>
                           </div>
-                          <button
-                            title="Agent details"
-                            className="row-action"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              setAgentDetails({ workspace, agent })
-                            }}
-                          >
-                            <MoreHorizontal size={16} />
-                          </button>
-                          <button
-                            title="Stop agent"
-                            className="row-action"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void deleteAgent(agent, workspace)
-                            }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>,
-                        ...(childWorkers[agent.terminalId] ?? []).map((worker) => (
-                          <div
-                            key={worker.terminalId}
-                            className={`nav-row agent-row child-agent-row ${selectedAgent?.terminalId === worker.terminalId ? 'is-selected' : ''}`}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => {
-                              setSelectedWorkspaceId(workspace.id)
-                              setSelectedAgentId(worker.terminalId)
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key !== 'Enter' && event.key !== ' ') return
-                              event.preventDefault()
-                              setSelectedWorkspaceId(workspace.id)
-                              setSelectedAgentId(worker.terminalId)
-                            }}
-                          >
-                            <AgentStatusIcon status={statusForAgent(worker, terminalStatuses)} />
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate">{worker.profile}</div>
-                              <div className="mono truncate text-[11px] opacity-70">{worker.provider}</div>
-                            </div>
-                          </div>
-                        )),
-                      ])}
-                      {isWorkspaceSelected ? (
-                        <button
-                          className="nav-row nested-create-row"
-                          disabled={workspace.status !== 'ready'}
-                          onClick={requestCreateAgent}
-                        >
-                          <Plus size={15} />
-                          <span>Create Agent</span>
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
+                        </div>
+                      )),
+                    ])}
+                    <button
+                      className="nav-row nested-create-row"
+                      onClick={() => requestCreateAgent(workspace)}
+                    >
+                      <Plus size={15} />
+                      <span>Create Agent</span>
+                    </button>
+                  </div>
                 </div>
               )
             })}
@@ -820,20 +767,15 @@ export default function App() {
               {selectedAgent?.terminalId || selectedWorkspace?.path || ''}
             </div>
           </div>
-          {selectedWorkspace?.status === 'starting' ? (
-            <div className="loading-pill mono">
-              <Loader2 size={13} className="animate-spin" />
-              Loading
-            </div>
-          ) : selectedWorkspace?.status === 'ready' && selectedAgent ? (
+          {selectedWorkspace && selectedAgent ? (
             <div className="status-pill mono">{statusLabel(statusForAgent(selectedAgent, terminalStatuses))}</div>
           ) : null}
         </div>
 
         <div className={`content-stage ${isTerminalVisible ? 'terminal-stage' : ''}`}>
-          {isTerminalVisible && selectedWorkspace?.baseUrl && selectedAgent ? (
+          {isTerminalVisible && serverBaseUrl && selectedAgent ? (
             <div className="terminal-shell">
-              <TerminalPane baseUrl={selectedWorkspace.baseUrl} terminalId={selectedAgent.terminalId} />
+              <TerminalPane baseUrl={serverBaseUrl} terminalId={selectedAgent.terminalId} />
             </div>
           ) : isAgentPreparing && selectedAgent ? (
             <div className="empty-stage items-start">
@@ -852,9 +794,6 @@ export default function App() {
               selectedAgent={selectedAgent}
               notice={notice}
               onOpenWorkspace={() => void openWorkspace()}
-              onRetryWorkspace={() => {
-                if (selectedWorkspace) void openWorkspace(selectedWorkspace.path)
-              }}
               onRetryAgent={(agent) => void retryCreateAgent(agent)}
               onCreateAgent={requestCreateAgent}
             />
@@ -869,12 +808,19 @@ export default function App() {
       ) : null}
 
       {settingsOpen ? (
-        <SettingsDialog settings={settings} onClose={() => setSettingsOpen(false)} onSave={persistSettings} />
+        <SettingsDialog
+          settings={settings}
+          profiles={profiles}
+          onClose={() => setSettingsOpen(false)}
+          onSave={persistSettings}
+          onProfilesChanged={loadCatalog}
+        />
       ) : null}
 
       {agentDetails ? (
         <AgentDetailsDialog
           target={agentDetails}
+          baseUrl={serverBaseUrl}
           status={statusLabel(statusForAgent(agentDetails.agent, terminalStatuses))}
           onClose={() => setAgentDetails(null)}
         />
@@ -898,7 +844,6 @@ function EmptyState({
   selectedAgent,
   notice,
   onOpenWorkspace,
-  onRetryWorkspace,
   onRetryAgent,
   onCreateAgent,
 }: {
@@ -906,7 +851,6 @@ function EmptyState({
   selectedAgent: AgentRecord | null
   notice: string | null
   onOpenWorkspace: () => void
-  onRetryWorkspace: () => void
   onRetryAgent: (agent: AgentRecord) => void
   onCreateAgent: () => void
 }) {
@@ -952,36 +896,15 @@ function EmptyState({
     )
   }
 
-  if (workspace.status === 'error') {
-    return (
-      <div className="empty-stage items-start">
-        <div>
-          <div className="hero-question text-left">{workspace.name}</div>
-          <div className="muted-path mono">{workspace.path}</div>
-        </div>
-        <div className="glass-notice">{notice || workspace.error}</div>
-        <div className="flex gap-3">
-          <button className="primary-button" onClick={onRetryWorkspace}>
-            Retry
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="empty-stage items-start">
       <div>
         <div className="hero-question text-left">{workspace.name}</div>
         <div className="muted-path mono">{workspace.path}</div>
       </div>
-      {workspace.status === 'ready' ? (
-        <button className="primary-button" onClick={onCreateAgent}>
-          Create Agent
-        </button>
-      ) : (
-        <div className="status-pill mono">{workspace.status}</div>
-      )}
+      <button className="primary-button" onClick={onCreateAgent}>
+        Create Agent
+      </button>
       {notice ? <div className="glass-notice">{notice}</div> : null}
     </div>
   )
@@ -989,10 +912,12 @@ function EmptyState({
 
 function AgentDetailsDialog({
   target,
+  baseUrl,
   status,
   onClose,
 }: {
   target: AgentDetailsTarget
+  baseUrl: string | null
   status: string
   onClose: () => void
 }) {
@@ -1032,7 +957,7 @@ function AgentDetailsDialog({
       </div>
 
       {tab === 'inbox' ? (
-        <AgentInbox baseUrl={workspace.baseUrl} terminalId={agent.terminalId} />
+        <AgentInbox baseUrl={baseUrl} terminalId={agent.terminalId} />
       ) : (
         <div className="agent-details">
           <div className="agent-details-grid">
@@ -1303,42 +1228,199 @@ function CreateAgentDialog({
 
 function SettingsDialog({
   settings,
+  profiles,
   onClose,
   onSave,
+  onProfilesChanged,
 }: {
   settings: Settings
+  profiles: AgentProfileInfo[]
   onClose: () => void
   onSave: (settings: Settings) => Promise<void>
+  onProfilesChanged: (baseUrl: string) => Promise<void>
 }) {
   const [draft, setDraft] = useState(settings)
+  const [tab, setTab] = useState<'general' | 'profiles'>('general')
+  const [serverBaseUrl, setServerBaseUrl] = useState<string | null>(null)
+  const [serverLoading, setServerLoading] = useState(false)
+  const [installSource, setInstallSource] = useState('')
+  const [installing, setInstalling] = useState(false)
+  const [installMessage, setInstallMessage] = useState<string | null>(null)
+  const [installError, setInstallError] = useState<string | null>(null)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     await onSave(draft)
   }
 
+  async function ensureProfileServer() {
+    if (serverBaseUrl) return serverBaseUrl
+    setServerLoading(true)
+    try {
+      const endpoint = await window.caoDesktop.ensureServer()
+      setServerBaseUrl(endpoint.baseUrl)
+      await onProfilesChanged(endpoint.baseUrl)
+      return endpoint.baseUrl
+    } finally {
+      setServerLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (tab !== 'profiles') return
+    void ensureProfileServer().catch((error) => {
+      setInstallError(error instanceof Error ? error.message : String(error))
+    })
+  }, [tab])
+
+  async function installProfile(event: FormEvent) {
+    event.preventDefault()
+    if (!installSource.trim() || installing) return
+    try {
+      setInstalling(true)
+      setInstallMessage(null)
+      setInstallError(null)
+      const baseUrl = await ensureProfileServer()
+      const result = await caoApi.importProfile(baseUrl, installSource.trim())
+      setInstallMessage(result.message)
+      setInstallSource('')
+      await onProfilesChanged(baseUrl)
+    } catch (error) {
+      setInstallError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  async function chooseProfileFile() {
+    try {
+      setInstallError(null)
+      setInstallMessage(null)
+      const selected = await window.caoDesktop.chooseProfileFile()
+      if (!selected) return
+      setInstallSource(selected.source)
+      setInstallMessage(`Imported ${selected.path}`)
+      const baseUrl = await ensureProfileServer()
+      await onProfilesChanged(baseUrl)
+    } catch (error) {
+      setInstallError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  function revealProfile(profile: AgentProfileInfo) {
+    if (!profile.path) return
+    void window.caoDesktop.revealPath(profile.path)
+  }
+
   return (
-    <Modal title="Settings" onClose={onClose}>
-      <form className="flex flex-col gap-3" onSubmit={submit}>
-        <Field label="Server Command">
-          <input className="field-control" value={draft.serverCommand} onChange={(event) => setDraft({ ...draft, serverCommand: event.target.value })} />
-        </Field>
-        <Field label="Default Provider">
-          <input className="field-control" value={draft.defaultProvider} onChange={(event) => setDraft({ ...draft, defaultProvider: event.target.value })} />
-        </Field>
-        <label className="toggle-row">
-          <input type="checkbox" checked={draft.cleanupOnExit} onChange={(event) => setDraft({ ...draft, cleanupOnExit: event.target.checked })} />
-          <span>Cleanup on exit</span>
-        </label>
-        <div className="mt-2 flex justify-end gap-2">
-          <button type="button" className="secondary-button" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="primary-button">
-            Save
-          </button>
+    <Modal title="Settings" onClose={onClose} wide>
+      <div className="agent-details-tabs">
+        <button
+          type="button"
+          className={`agent-tab ${tab === 'general' ? 'is-active' : ''}`}
+          onClick={() => setTab('general')}
+        >
+          General
+        </button>
+        <button
+          type="button"
+          className={`agent-tab ${tab === 'profiles' ? 'is-active' : ''}`}
+          onClick={() => setTab('profiles')}
+        >
+          Profiles
+        </button>
+      </div>
+
+      {tab === 'general' ? (
+        <form className="flex flex-col gap-3" onSubmit={submit}>
+          <Field label="Server Command">
+            <input className="field-control" value={draft.serverCommand} onChange={(event) => setDraft({ ...draft, serverCommand: event.target.value })} />
+          </Field>
+          <Field label="Default Provider">
+            <input className="field-control" value={draft.defaultProvider} onChange={(event) => setDraft({ ...draft, defaultProvider: event.target.value })} />
+          </Field>
+          <label className="toggle-row">
+            <input type="checkbox" checked={draft.cleanupOnExit} onChange={(event) => setDraft({ ...draft, cleanupOnExit: event.target.checked })} />
+            <span>Cleanup on exit</span>
+          </label>
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" className="secondary-button" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="primary-button">
+              Save
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="settings-profiles-panel">
+          <form className="settings-install-form" onSubmit={installProfile}>
+            <Field label="Profile Source">
+              <div className="settings-source-row">
+                <input
+                  className="field-control"
+                  value={installSource}
+                  onChange={(event) => setInstallSource(event.target.value)}
+                  placeholder="profile-name or https://.../profile.md"
+                  disabled={serverLoading || installing}
+                />
+                <button
+                  type="button"
+                  className="secondary-button settings-file-button"
+                  disabled={serverLoading || installing}
+                  onClick={() => void chooseProfileFile()}
+                  title="Choose profile file"
+                >
+                  <FolderOpen size={15} />
+                </button>
+              </div>
+            </Field>
+
+            {serverLoading ? (
+              <div className="settings-success">
+                <Loader2 size={15} className="animate-spin" />
+                <span>Starting cao-server…</span>
+              </div>
+            ) : null}
+            {installError ? <div className="glass-notice inbox-error">{installError}</div> : null}
+            {installMessage ? (
+              <div className="settings-success">
+                <CheckCircle2 size={15} />
+                <span>{installMessage}</span>
+              </div>
+            ) : null}
+
+            <div className="flex justify-end">
+              <button type="submit" className="primary-button" disabled={!installSource.trim() || serverLoading || installing}>
+                {installing ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                Install
+              </button>
+            </div>
+          </form>
+
+          <div className="settings-profile-list">
+            <div className="field-label mono">Current Profile Files</div>
+            {profiles.length === 0 ? (
+              <div className="settings-profile-empty">No profiles loaded.</div>
+            ) : (
+              profiles.map((profile) => (
+                <div
+                  key={`${profile.source}:${profile.name}`}
+                  className={`settings-profile-row ${profile.path ? 'is-revealable' : ''}`}
+                  onDoubleClick={() => revealProfile(profile)}
+                  title={profile.path ? 'Double-click to reveal in Finder' : undefined}
+                >
+                  <div className="settings-profile-main">
+                    <div className="settings-profile-name">{profile.name}</div>
+                    <div className="settings-profile-meta mono">{profile.role || profile.source}</div>
+                  </div>
+                  <code className="settings-profile-path mono">{profile.path || profile.source}</code>
+                </div>
+              ))
+            )}
+          </div>
         </div>
-      </form>
+      )}
     </Modal>
   )
 }
@@ -1382,55 +1464,6 @@ function SectionLabel({ children }: { children: ReactNode }) {
   return <div className="section-label mono">{children}</div>
 }
 
-function WorkspaceActionButton({
-  workspace,
-  operation,
-  onStart,
-  onStop,
-}: {
-  workspace: WorkspaceRecord
-  operation?: 'starting' | 'stopping'
-  onStart: () => void
-  onStop: () => void
-}) {
-  const busy = operation || workspace.status === 'starting'
-  if (busy) {
-    return (
-      <button title={operation === 'stopping' ? 'Stopping workspace' : 'Starting workspace'} className="row-action" disabled>
-        <Loader2 size={14} className="animate-spin" />
-      </button>
-    )
-  }
-
-  if (workspace.status === 'ready') {
-    return (
-      <button
-        title="Stop workspace"
-        className="row-action"
-        onClick={(event) => {
-          event.stopPropagation()
-          onStop()
-        }}
-      >
-        <Square size={14} />
-      </button>
-    )
-  }
-
-  return (
-    <button
-      title="Start workspace"
-      className="row-action"
-      onClick={(event) => {
-        event.stopPropagation()
-        onStart()
-      }}
-    >
-      <Play size={14} />
-    </button>
-  )
-}
-
 function IconButton({
   title,
   disabled,
@@ -1452,13 +1485,6 @@ function IconButton({
       {children}
     </button>
   )
-}
-
-function WorkspaceDot({ status }: { status: string }) {
-  if (status === 'ready') return <CheckCircle2 size={16} className="status-success" />
-  if (status === 'starting') return <Loader2 size={16} className="status-warn animate-spin" />
-  if (status === 'error') return <Circle size={16} className="status-danger" />
-  return <Circle size={16} className="status-muted" />
 }
 
 function AgentStatusIcon({ status }: { status: string | null }) {

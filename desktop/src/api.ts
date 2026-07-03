@@ -1,4 +1,12 @@
-import type { AgentProfileInfo, HealthInfo, InboxMessage, ProviderInfo, Terminal, TerminalMeta } from './types'
+import type {
+  AgentProfileInfo,
+  HealthInfo,
+  ImportProfileResult,
+  InboxMessage,
+  ProviderInfo,
+  Terminal,
+  TerminalMeta,
+} from './types'
 
 interface FetchJsonInit extends RequestInit {
   timeoutMs?: number
@@ -36,6 +44,13 @@ export const caoApi = {
   health: (baseUrl: string) => fetchJson<HealthInfo>(baseUrl, '/health'),
   listProfiles: (baseUrl: string) => fetchJson<AgentProfileInfo[]>(baseUrl, '/agents/profiles'),
   listProviders: (baseUrl: string) => fetchJson<ProviderInfo[]>(baseUrl, '/agents/providers'),
+  importProfile: (baseUrl: string, source: string) =>
+    fetchJson<ImportProfileResult>(baseUrl, '/agents/profiles/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source }),
+      timeoutMs: 60_000,
+    }),
   createSession: (
     baseUrl: string,
     provider: string,
