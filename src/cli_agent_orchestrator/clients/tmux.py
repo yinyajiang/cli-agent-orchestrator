@@ -21,6 +21,21 @@ class TmuxClient:
     def __init__(self) -> None:
         self.server = libtmux.Server()
 
+    def _enable_mouse(self, session_name: str, window_name: str) -> None:
+        """Enable tmux mouse handling so wheel events scroll copy-mode/history.
+
+        Without this, many terminal emulators translate wheel events into
+        Up/Down key sequences for the active pane, which shells interpret as
+        command-history navigation.
+        """
+        validated_session = validate_tmux_name(session_name, "session_name")
+        validated_window = validate_tmux_name(window_name, "window_name")
+        target = f"{validated_session}:{validated_window}"
+        try:
+            self.server.cmd("set-window-option", "-t", target, "mouse", "on")
+        except Exception as e:
+            logger.warning("Failed to enable tmux mouse mode for %s: %s", target, e)
+
     # Directories that should never be used as working directories.
     # Prevents user-supplied paths from pointing at sensitive system locations.
     # Includes /private/* variants for macOS (where /etc -> /private/etc, etc.).
@@ -236,6 +251,7 @@ class TmuxClient:
             window_name_result = session.windows[0].name
             if window_name_result is None:
                 raise ValueError(f"Window name is None for session {session_name}")
+            self._enable_mouse(session_name, window_name_result)
             return window_name_result
         except Exception as e:
             logger.error(f"Failed to create session {session_name}: {e}")
@@ -283,6 +299,7 @@ class TmuxClient:
             window_name_result = window.name
             if window_name_result is None:
                 raise ValueError(f"Window name is None for session {session_name}")
+            self._enable_mouse(session_name, window_name_result)
             return window_name_result
         except Exception as e:
             logger.error(f"Failed to create window in session {session_name}: {e}")

@@ -21,6 +21,7 @@ export function TerminalPane({ baseUrl, terminalId }: TerminalPaneProps) {
       fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: 13,
       lineHeight: 1.2,
+      scrollback: 10000,
       theme: {
         background: '#111112',
         foreground: '#eeeeef',
@@ -108,26 +109,9 @@ export function TerminalPane({ baseUrl, terminalId }: TerminalPaneProps) {
     })
     resizeObserver.observe(host)
 
-    // Forward mouse wheel to full-screen apps (alternate buffer) as arrow keys.
-    // claude code and other Ink TUIs don't enable mouse tracking, so without
-    // this the wheel only scrolls xterm's scrollback. In the normal shell
-    // buffer the wheel keeps scrolling scrollback as usual.
-    const onWheel = (event: WheelEvent) => {
-      if (socket.readyState !== WebSocket.OPEN) return
-      if (terminal.buffer.active.type !== 'alternate') return
-      event.preventDefault()
-      const key = event.deltaY > 0 ? '\x1b[B' : '\x1b[A'
-      const lines = Math.min(5, Math.max(1, Math.round(Math.abs(event.deltaY) / 40)))
-      for (let i = 0; i < lines; i += 1) {
-        socket.send(JSON.stringify({ type: 'input', data: key }))
-      }
-    }
-    host.addEventListener('wheel', onWheel, { passive: false })
-
     return () => {
       disposed = true
       if (resizeTimer) clearTimeout(resizeTimer)
-      host.removeEventListener('wheel', onWheel)
       resizeObserver.disconnect()
       inputDisposable.dispose()
       terminal.attachCustomKeyEventHandler(() => true)

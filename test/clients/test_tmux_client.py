@@ -99,6 +99,17 @@ class TestCreateSession:
         assert kwargs.get("x") == 220
         assert kwargs.get("y") == 50
 
+    def test_create_session_enables_mouse_mode(self, tmux, tmp_path):
+        mock_window = MagicMock()
+        mock_window.name = "my-window"
+        mock_session = MagicMock()
+        mock_session.windows = [mock_window]
+        tmux.server.new_session.return_value = mock_session
+
+        tmux.create_session("ses", "my-window", "tid1", str(tmp_path))
+
+        tmux.server.cmd.assert_any_call("set-window-option", "-t", "ses:my-window", "mouse", "on")
+
 
 class TestCreateSessionEnvironmentFiltering:
     """Tests for environment variable filtering in create_session (#242)."""
@@ -266,6 +277,17 @@ class TestCreateWindow:
         assert result == "restored-window"
         call_kwargs = mock_session.new_window.call_args[1]
         assert call_kwargs["window_shell"] == "cat /tmp/x; exec bash -l"
+
+    def test_create_window_enables_mouse_mode_for_existing_session(self, tmux, tmp_path):
+        mock_window = MagicMock()
+        mock_window.name = "agent-window"
+        mock_session = MagicMock()
+        mock_session.new_window.return_value = mock_window
+        tmux.server.sessions.get.return_value = mock_session
+
+        tmux.create_window("ses", "agent-window", "tid2", str(tmp_path))
+
+        tmux.server.cmd.assert_any_call("set-window-option", "-t", "ses:agent-window", "mouse", "on")
 
 
 # ── send_keys ────────────────────────────────────────────────────────
