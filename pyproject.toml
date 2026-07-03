@@ -27,6 +27,10 @@ dependencies = [
     # internal (create_initialization_options); cap the major to avoid silent
     # breakage on a new major release. Tested against 3.x.
     "fastmcp>=2.14.0,<4.0.0",
+    # SOCKS proxy support for the httpx client FastMCP creates at cao-mcp-server
+    # startup (version-update check). Without it, hosts behind a SOCKS proxy
+    # (ALL_PROXY=socks5://...) crash with "-32000" on MCP connect.
+    "socksio>=1.0.0",
     "mcp>=1.23.0",
     "pydantic>=2.10.6",
     "apscheduler>=3.10.4",

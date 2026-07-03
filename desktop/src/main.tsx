@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import { ServerDebugWindow } from './ServerDebugWindow'
 import './styles.css'
 
 const root = createRoot(document.getElementById('root')!)
@@ -18,9 +19,11 @@ if (!window.caoDesktop) {
     </div>,
   )
 } else {
+  const isDebugWindow = new URLSearchParams(window.location.search).get('window') === 'debug'
+  if (isDebugWindow) document.body.classList.add('debug-window-body')
   root.render(
     <React.StrictMode>
-      <App />
+      {isDebugWindow ? <ServerDebugWindow /> : <App />}
     </React.StrictMode>,
   )
 }

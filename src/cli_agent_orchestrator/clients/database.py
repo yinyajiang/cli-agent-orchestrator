@@ -428,6 +428,7 @@ def list_terminals_by_session(tmux_session: str) -> List[Dict[str, Any]]:
                 "tmux_window": t.tmux_window,
                 "provider": t.provider,
                 "agent_profile": t.agent_profile,
+                "caller_id": t.caller_id,
                 "last_active": t.last_active,
             }
             for t in terminals
@@ -467,6 +468,7 @@ def list_all_terminals() -> List[Dict[str, Any]]:
                 "tmux_window": t.tmux_window,
                 "provider": t.provider,
                 "agent_profile": t.agent_profile,
+                "caller_id": t.caller_id,
                 "last_active": t.last_active,
             }
             for t in terminals

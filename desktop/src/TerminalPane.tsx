@@ -78,19 +78,59 @@ export function TerminalPane({ baseUrl, terminalId }: TerminalPaneProps) {
         socket.send(JSON.stringify({ type: 'input', data }))
       }
     })
-
-    const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit()
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'resize', rows: terminal.rows, cols: terminal.cols }))
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (
+        event.type === 'keydown' &&
+        event.key === '/' &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey
+      ) {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'input', data: '/' }))
+        }
+        return false
       }
+      return true
+    })
+
+    // Debounce resize (50ms) to avoid flooding the server while dragging the
+    // window — matches web/src/components/TerminalView.tsx.
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined
+    const resizeObserver = new ResizeObserver(() => {
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        fitAddon.fit()
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'resize', rows: terminal.rows, cols: terminal.cols }))
+        }
+      }, 50)
     })
     resizeObserver.observe(host)
 
+    // Forward mouse wheel to full-screen apps (alternate buffer) as arrow keys.
+    // claude code and other Ink TUIs don't enable mouse tracking, so without
+    // this the wheel only scrolls xterm's scrollback. In the normal shell
+    // buffer the wheel keeps scrolling scrollback as usual.
+    const onWheel = (event: WheelEvent) => {
+      if (socket.readyState !== WebSocket.OPEN) return
+      if (terminal.buffer.active.type !== 'alternate') return
+      event.preventDefault()
+      const key = event.deltaY > 0 ? '\x1b[B' : '\x1b[A'
+      const lines = Math.min(5, Math.max(1, Math.round(Math.abs(event.deltaY) / 40)))
+      for (let i = 0; i < lines; i += 1) {
+        socket.send(JSON.stringify({ type: 'input', data: key }))
+      }
+    }
+    host.addEventListener('wheel', onWheel, { passive: false })
+
     return () => {
       disposed = true
+      if (resizeTimer) clearTimeout(resizeTimer)
+      host.removeEventListener('wheel', onWheel)
       resizeObserver.disconnect()
       inputDisposable.dispose()
+      terminal.attachCustomKeyEventHandler(() => true)
       socket.close()
       terminal.dispose()
     }

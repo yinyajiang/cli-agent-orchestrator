@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { AgentRecord, Settings, WorkspaceRecord } from './types'
+import type { AgentRecord, CaoServerDebugInfo, Settings, WorkspaceRecord } from './types'
 
 declare module '*.css'
 
@@ -20,11 +20,8 @@ declare global {
       ) => Promise<WorkspaceRecord[]>
       recordAgent: (workspaceId: string, agent: AgentRecord) => Promise<WorkspaceRecord[]>
       removeAgent: (workspaceId: string, terminalId: string) => Promise<WorkspaceRecord[]>
-      updateAgentStatus: (
-        workspaceId: string,
-        terminalId: string,
-        status: string,
-      ) => Promise<WorkspaceRecord[]>
+      getServerDebugInfo: () => Promise<CaoServerDebugInfo>
+      openServerDebugWindow: () => Promise<void>
       pathForFile: (file: File) => string
     }
   }

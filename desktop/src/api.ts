@@ -1,4 +1,4 @@
-import type { AgentProfileInfo, ProviderInfo, Terminal, TerminalMeta } from './types'
+import type { AgentProfileInfo, HealthInfo, InboxMessage, ProviderInfo, Terminal, TerminalMeta } from './types'
 
 interface FetchJsonInit extends RequestInit {
   timeoutMs?: number
@@ -33,6 +33,7 @@ async function fetchJson<T>(baseUrl: string, path: string, init?: FetchJsonInit)
 }
 
 export const caoApi = {
+  health: (baseUrl: string) => fetchJson<HealthInfo>(baseUrl, '/health'),
   listProfiles: (baseUrl: string) => fetchJson<AgentProfileInfo[]>(baseUrl, '/agents/profiles'),
   listProviders: (baseUrl: string) => fetchJson<ProviderInfo[]>(baseUrl, '/agents/providers'),
   createSession: (
@@ -85,4 +86,17 @@ export const caoApi = {
     }),
   getTerminal: (baseUrl: string, terminalId: string) =>
     fetchJson<Terminal>(baseUrl, `/terminals/${terminalId}`),
+  getInboxMessages: (baseUrl: string, terminalId: string, limit = 50, status?: string) =>
+    fetchJson<InboxMessage[]>(
+      baseUrl,
+      `/terminals/${terminalId}/inbox/messages?limit=${limit}${status ? `&status=${status}` : ''}`,
+    ),
+  sendInboxMessage: (baseUrl: string, receiverId: string, senderId: string, message: string) => {
+    const query = new URLSearchParams({ sender_id: senderId, message })
+    return fetchJson<{ success: boolean }>(
+      baseUrl,
+      `/terminals/${receiverId}/inbox/messages?${query.toString()}`,
+      { method: 'POST' },
+    )
+  },
 }

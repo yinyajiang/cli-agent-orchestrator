@@ -51,32 +51,38 @@ def _scan_directory(directory: Path, source_label: str, profiles: Dict[str, Dict
         if item.is_dir():
             profile_name = item.name
             desc = ""
+            role = ""
             # Check for agent.md inside directory
             agent_md = item / "agent.md"
             if agent_md.exists():
                 try:
                     data = frontmatter.loads(agent_md.read_text())
                     desc = data.metadata.get("description", "")
+                    role = data.metadata.get("role", "")
                 except Exception:
                     pass
             if profile_name not in profiles:
                 profiles[profile_name] = {
                     "name": profile_name,
                     "description": desc,
+                    "role": role,
                     "source": source_label,
                 }
         elif item.suffix == ".md" and item.is_file():
             profile_name = item.stem
             desc = ""
+            role = ""
             try:
                 data = frontmatter.loads(item.read_text())
                 desc = data.metadata.get("description", "")
+                role = data.metadata.get("role", "")
             except Exception:
                 pass
             if profile_name not in profiles:
                 profiles[profile_name] = {
                     "name": profile_name,
                     "description": desc,
+                    "role": role,
                     "source": source_label,
                 }
 
@@ -106,12 +112,14 @@ def list_agent_profiles() -> List[Dict]:
                     profiles[profile_name] = {
                         "name": profile_name,
                         "description": data.metadata.get("description", ""),
+                        "role": data.metadata.get("role", ""),
                         "source": "built-in",
                     }
                 except Exception:
                     profiles[profile_name] = {
                         "name": profile_name,
                         "description": "",
+                        "role": "",
                         "source": "built-in",
                     }
     except Exception as e:

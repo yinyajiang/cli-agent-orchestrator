@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { AgentRecord, Settings, WorkspaceRecord } from '../src/types.js'
+import type { AgentRecord, CaoServerDebugInfo, Settings, WorkspaceRecord } from '../src/types.js'
 
 contextBridge.exposeInMainWorld('caoDesktop', {
   chooseDirectory: () => ipcRenderer.invoke('choose-directory') as Promise<string | null>,
@@ -19,7 +19,9 @@ contextBridge.exposeInMainWorld('caoDesktop', {
     ipcRenderer.invoke('record-agent', workspaceId, agent) as Promise<WorkspaceRecord[]>,
   removeAgent: (workspaceId: string, terminalId: string) =>
     ipcRenderer.invoke('remove-agent', workspaceId, terminalId) as Promise<WorkspaceRecord[]>,
-  updateAgentStatus: (workspaceId: string, terminalId: string, status: string) =>
-    ipcRenderer.invoke('update-agent-status', workspaceId, terminalId, status) as Promise<WorkspaceRecord[]>,
+  getServerDebugInfo: () =>
+    ipcRenderer.invoke('get-server-debug-info') as Promise<CaoServerDebugInfo>,
+  openServerDebugWindow: () =>
+    ipcRenderer.invoke('open-server-debug-window') as Promise<void>,
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 })
