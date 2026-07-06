@@ -1439,13 +1439,13 @@ function Modal({
   return (
     <div className="modal-backdrop">
       <div className={`modal-card ${wide ? 'modal-card-wide' : ''}`}>
-        <div className="mb-4 flex items-center justify-between">
+        <div className="modal-header">
           <div className="modal-title">{title}</div>
           <IconButton title="Close" onClick={onClose}>
             <X size={18} />
           </IconButton>
         </div>
-        {children}
+        <div className="modal-body">{children}</div>
       </div>
     </div>
   )
@@ -1488,9 +1488,9 @@ function IconButton({
 }
 
 function AgentStatusIcon({ status }: { status: string | null }) {
-  if (status === 'processing' || status === 'starting') return <Loader2 size={16} className="status-warn animate-spin" />
-  if (status === 'waiting_user_answer') return <Circle size={16} className="status-warn fill-current" />
-  if (status === 'error') return <Circle size={16} className="status-danger fill-current" />
-  if (status === 'idle' || status === 'completed') return <Circle size={16} className="status-success fill-current" />
-  return <Circle size={16} className="status-muted" />
+  if (status === 'processing' || status === 'starting') return <Loader2 size={11} className="status-warn animate-spin" />
+  if (status === 'waiting_user_answer') return <Circle size={11} className="status-warn fill-current" />
+  if (status === 'error') return <Circle size={11} className="status-danger fill-current" />
+  if (status === 'idle' || status === 'completed') return <Circle size={11} className="status-success fill-current" />
+  return <Circle size={11} className="status-muted" />
 }

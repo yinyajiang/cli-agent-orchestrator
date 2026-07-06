@@ -1,4 +1,5 @@
-import { app, BrowserWindow } from 'electron'
+import { app } from 'electron'
+import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc.js'
 import { caoServerManager } from './server.js'
 import { loadState, saveState } from './state.js'
@@ -19,12 +20,15 @@ app.on('before-quit', (event) => {
 })
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(join(app.getAppPath(), 'assets', 'icon.png'))
+  }
   const state = loadState({ normalizeRuntimeState: true })
   saveState(state)
   caoServerManager.startInBackground(state.settings)
   createMainWindow()
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+    createMainWindow()
   })
 })
 

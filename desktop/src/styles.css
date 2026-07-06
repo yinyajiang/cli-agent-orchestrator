@@ -37,12 +37,13 @@ select {
 
 .xterm {
   height: 100%;
-  padding: 16px;
+  background: #111111;
 }
 
 .xterm-screen,
 .xterm-viewport {
   height: 100%;
+  background-color: #111111;
 }
 
 .app-shell {
@@ -201,8 +202,8 @@ select {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-left: 18px;
-  padding-left: 12px;
+  margin-left: 6px;
+  padding-left: 8px;
 }
 
 .agent-row {
@@ -242,6 +243,17 @@ select {
   color: rgba(255, 255, 255, 0.52);
   background: transparent;
   transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.nav-row .row-action {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.nav-row:hover .row-action,
+.nav-row:focus-within .row-action {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .row-action:hover,
@@ -308,15 +320,16 @@ select {
 
 .content-stage.terminal-stage {
   padding: 0;
-  background: #111112;
+  background: #111111;
 }
 
 .terminal-shell {
   min-width: 0;
   flex: 1;
   overflow: hidden;
+  padding: 16px;
   border-radius: 0;
-  background: #111112;
+  background: #111111;
   border: 0;
   box-shadow: none;
   backdrop-filter: none;
@@ -447,6 +460,9 @@ select {
 }
 
 .modal-card {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
   width: 480px;
   padding: 18px;
   border-radius: 26px;
@@ -461,12 +477,27 @@ select {
 
 .modal-card-wide {
   width: min(860px, calc(100vw - 80px));
+  min-height: min(620px, calc(100vh - 80px));
 }
 
 .modal-title {
   font-size: 18px;
   font-weight: 650;
   color: rgba(255, 255, 255, 0.92);
+}
+
+.modal-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .startup-failure {

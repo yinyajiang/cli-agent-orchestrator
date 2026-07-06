@@ -23,11 +23,11 @@ export function TerminalPane({ baseUrl, terminalId }: TerminalPaneProps) {
       lineHeight: 1.2,
       scrollback: 10000,
       theme: {
-        background: '#111112',
+        background: '#111111',
         foreground: '#eeeeef',
         cursor: '#ffffff',
         selectionBackground: '#3a3a3d',
-        black: '#111112',
+        black: '#111111',
         brightBlack: '#6f6f76',
         red: '#ff5d55',
         green: '#3ddc84',
@@ -120,5 +120,5 @@ export function TerminalPane({ baseUrl, terminalId }: TerminalPaneProps) {
     }
   }, [baseUrl, terminalId])
 
-  return <div ref={hostRef} className="h-full w-full overflow-hidden bg-[#111112]" />
+  return <div ref={hostRef} className="h-full w-full overflow-hidden bg-[#111111]" />
 }

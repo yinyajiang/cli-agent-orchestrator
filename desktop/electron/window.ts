@@ -3,9 +3,19 @@ import { join } from 'node:path'
 
 let mainWindow: BrowserWindow | null = null
 let debugWindow: BrowserWindow | null = null
+let isQuitting = false
+
+// 应用真正退出时放行窗口关闭；否则点关闭按钮只最小化
+app.on('before-quit', () => {
+  isQuitting = true
+})
 
 function preloadPath() {
   return join(app.getAppPath(), 'dist-electron', 'electron', 'preload.js')
+}
+
+function iconPath() {
+  return join(app.getAppPath(), 'assets', 'icon.png')
 }
 
 function loadRenderer(window: BrowserWindow, query: Record<string, string> = {}) {
@@ -24,6 +34,8 @@ function loadRenderer(window: BrowserWindow, query: Record<string, string> = {})
 
 export function createMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
     mainWindow.focus()
     return mainWindow
   }
@@ -37,6 +49,7 @@ export function createMainWindow() {
     show: false,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
+    icon: iconPath(),
     backgroundColor: '#111111',
     vibrancy: 'under-window',
     visualEffectState: 'active',
@@ -50,6 +63,11 @@ export function createMainWindow() {
 
   mainWindow = window
   window.once('ready-to-show', () => window.show())
+  window.on('close', (event) => {
+    if (isQuitting) return
+    event.preventDefault()
+    window.hide()
+  })
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null
   })
@@ -75,6 +93,7 @@ export function openDebugWindow() {
     title: 'cao-server Debug',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
+    icon: iconPath(),
     backgroundColor: '#111111',
     vibrancy: 'under-window',
     visualEffectState: 'active',

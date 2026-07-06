@@ -44,11 +44,13 @@
     "files": [
       "dist/**",
       "dist-electron/**",
+      "assets/**",
       "package.json"
     ],
     "mac": {
       "target": "dir",
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icon.icns"
     }
   }
 }
